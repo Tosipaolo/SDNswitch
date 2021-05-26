@@ -18,8 +18,17 @@ from ryu.lib.packet import packet, ethernet, ether_types
 import networkx as nx
 
 
-class HopByHopSwitch(app_manager.RyuApp):
+class FRANCO(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
+
+    def __init__(self, *args, **kwargs):
+        super(FRANCO, self).__init__(*args, **kwargs)
+        self.mac_to_port = {}
+        self.Lista_links = []
+
+
+
+
 
     # def send_set_async(self, datapath):
     #     ofp = datapath.ofproto
@@ -46,24 +55,16 @@ class HopByHopSwitch(app_manager.RyuApp):
 
     # tutti i pacchetti al controllore
 
-    def get_topology(self):
-
-        lista_links = get_all_link(self)
-
-        return lista_links
-
-    def trova_link(self, lista, dp, port_no):
-
-        for elem in lista:
-            if elem[0] == dp & elem[2] == port_no:
-                return elem
-        return NULL
-
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
+
+        self.Lista_links = get_all_link(self)
+
         datapath = ev.msg.datapath
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
+
+        self.mac_to_port[datapath.id] = {}
 
         inst = [
             parser.OFPInstructionActions(
@@ -83,12 +84,20 @@ class HopByHopSwitch(app_manager.RyuApp):
         )
         datapath.send_msg(mod)
 
+
+        print('HO FATTO LA GET TOPOLOGY')
+        lista_link = [(link.src.dpid, link.dst.dpid, link.src.port_no) for link in self.Lista_links]
+        print(lista_link)
+
+
+
     # trova switch destinazione e porta dello switch
     def find_destination_switch(self, destination_mac):
         for host in get_all_host(self):
             if host.mac == destination_mac:
                 return (host.port.dpid, host.port.port_no)
         return (None, None)
+
 
     def find_next_hop_to_destination(self, source_id, destination_id):
         net = nx.DiGraph()
@@ -105,8 +114,16 @@ class HopByHopSwitch(app_manager.RyuApp):
 
         return first_link['port']
 
-    @set_ev_cls(ofp_event.EventOFPPortStateChange)
-    def _Port_handler(self, ev):
+
+    @set_ev_cls(ofp_event.EventOFPPortStatus, MAIN_DISPATCHER)
+    def Port_handler(self, ev):
+
+        global Lista_links
+
+        def trova_link(lista, dp, port):
+            for elem in lista:
+                if elem[0] == dp & elem[2] == port:
+                    return elem
 
         msg = ev.msg
         dp = msg.datapath
@@ -123,33 +140,38 @@ class HopByHopSwitch(app_manager.RyuApp):
         else:
             reason = 'unknown'
 
-        self.logger.debug('Ho ricevuto OFPPortStatus: '
-                          'datapath_id=0x%016x'
-                          'reason=%s desc=%s',
-                          ev.msg.datapath_id,
-                          reason, msg.desc)
+        self.logger.debug('OFPPortStatus received: reason=%s desc=%s DP=%s',
+                          reason, msg.desc, dp_id)
+        self.logger.debug('_____________POOORT NUMBER__________ %s', msg.desc.port_no)
 
-        if reason == 'DELETE':
-            links = get_all_link(self)
+        if reason == 'MODIFY':
 
             # lista di elementi link (switch sorgente, switch destinazione, numero di porta)
-            lista_link = [(link.src.dpid, link.dst.dpid, link.src.port_no) for link in link_list]
-            link_interessato = trova_link(lista_link, dp_id, port_no)
+
+
+            link_interessato = trova_link(lista=lista_link, dp=dp_id, port=msg.desc.port_no)
+            self.logger.debug('link interessato %s', link_interessato)
+
+
 
             # caso LINK CON HOST:
 
-            if link_interessato == NULL:
-                self.logger.debug("link nullo, hai sbagliato qualcosa", ev.msg.datapath_id,
-                                  reason, msg.desc)
-                return 0
+            if link_interessato == None:
+                self.logger.debug("link nullo, hai sbagliato qualcosa", ev.msg.datapath.id, reason, msg.desc)
+                return
             elif (link_interessato[0][0] == 's' & link_interessato[1][0] == 'h') | (
                     link_interessato[1][0] == 's' & link_interessato[0][0] == 'h'):
 
-                self.logger.debug('è stato spento un link tra %s e %s', link_interessato[0], link_interessato[1])
+                self.logger.debug('è stato spento un link tra %s e %s, SWITCH-HOST', link_interessato[0],
+                                  link_interessato[1])
+
+            else:
+                self.logger.debug('è stato spento un link tra %s e %s, SWITCH-SWITCH', link_interessato[0],
+                                  link_interessato[1])
+
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def _packet_in_handler(self, ev):
-
         msg = ev.msg
         datapath = msg.datapath
         ofproto = datapath.ofproto
@@ -210,5 +232,7 @@ class HopByHopSwitch(app_manager.RyuApp):
             instructions=inst
         )
         datapath.send_msg(mod)
+
+        get_topology()
 
         return

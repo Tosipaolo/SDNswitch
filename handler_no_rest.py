@@ -47,10 +47,11 @@ class No_Rest_Downhandler(app_manager.RyuApp):
             instructions=inst
         )
         datapath.send_msg(mod)
+        self.FLow_through_Port[datapath.id] = []
+        print("Creazione dict del datapath", datapath.id)
 
-        self.FLow_through_Port[datapath.id] = {}
 
-    # trova switch destinazione e porta dello switch
+        # trova switch destinazione e porta dello switch
     def find_destination_switch(self, destination_mac):
         self.Host_list = get_all_host(self)
         for host in self.Host_list:
@@ -98,25 +99,14 @@ class No_Rest_Downhandler(app_manager.RyuApp):
         destination_mac = eth.dst
         sender_mac = eth.src
 
-
-
-        #CREO UNA TABELLA CON LE CORRISPONDENZE MITTENTE-DESTINATARIO CHE SI VERIFICANO
-        #SU UNA DATA PORTA DEL DATAPATH
-        if datapath.id in self.Flow_through_Port:
-            if in_port in self.FLow_through_Port[datapath.id]:
-                self.FLow_through_Port[datapath.id][in_port].append((sender_mac, destination_mac))
-            else:
-                self.FLow_through_Port[datapath.id][in_port] = [(sender_mac, destination_mac)]
-        else:
-            self.FLow_through_Port[datapath.id] = {in_port : [(sender_mac, destination_mac)]}
-
-
         # trova switch destinazione
         (dst_dpid, dst_port) = self.find_destination_switch(destination_mac)
+        # trova switch sorgente
+        (src_dpid, src_port) = self.find_destination_switch(sender_mac)
 
         # host non trovato
         if dst_dpid is None:
-            # print "DP: ", datapath.id, "Host not found: ", pkt_ip.dst
+            print("DP: ", datapath.id, "Host not found: ")
             return
 
         if dst_dpid == datapath.id:
@@ -127,6 +117,21 @@ class No_Rest_Downhandler(app_manager.RyuApp):
             output_port = self.find_next_hop_to_destination(datapath.id, dst_dpid)
 
         # print "DP: ", datapath.id, "Host: ", pkt_ip.dst, "Port: ", output_port
+
+        print("BREAK: PRIMA DI RIEMPIRE LA Flow_through_Port")
+
+        # CREO UNA TABELLA CON LE CORRISPONDENZE MITTENTE-DESTINATARIO CHE SI VERIFICANO
+        # SU UNA DATA PORTA DEL DATAPATH
+        if datapath.id in self.FLow_through_Port:
+            if output_port in self.FLow_through_Port[datapath.id]:
+                self.FLow_through_Port[datapath.id][output_port].append(((sender_mac, src_dpid), (destination_mac, dst_dpid)))
+            else:
+                self.FLow_through_Port[datapath.id].append({output_port: [((sender_mac, src_dpid), (destination_mac, dst_dpid))]})
+        else:
+            self.FLow_through_Port[datapath.id] = {output_port: [((sender_mac, src_dpid), (destination_mac, dst_dpid))]}
+
+        print(self.FLow_through_Port)
+
 
         # inoltra il pacchetto corrente
         actions = [ parser.OFPActionOutput(output_port) ]
@@ -186,17 +191,24 @@ class No_Rest_Downhandler(app_manager.RyuApp):
                                                           match, instructions)
             return flow_del
 
+        for item in self.FLow_through_Port[dp_id]:
+            if port_no in item:
+                print("MATCH SULLE LISTE")
+                break
+            else:
+                print("Liste Vuote: NESSUN FLOW SULLA PORTA:", port_no)
+                return
+
+        for link in self.Link_list:
+            net.add_edge(link.src.dpid, link.dst.dpid, port=link.src.port_no)
+
         for flow in self.FLow_through_Port[dp_id][port_no]:
-            for link in self.Link_list:
-                net.add_edge(link.src.dpid, link.dst.dpid, port=link.src.port_no)
-
-
             # si trova il cammino minimo tra il mittente e il destinatario salvati alla packet_in che
-            # scambiavano apcchetti attraverso quella porta
+            # scambiavano pacchetti attraverso quella porta
             path = nx.shortest_path(
                 net,
-                flow[0],
-                flow[1]
+                flow[0][1],
+                flow[1][1]
             )
 
             if path is None:
@@ -204,8 +216,12 @@ class No_Rest_Downhandler(app_manager.RyuApp):
 
             for hop in self.Switch_list:
                 if hop.id in path:
-                    FlowMod = createFlowMod(hop, flow[0], flow[1])
+                    FlowMod = createFlowMod(hop, flow[0][0], flow[1][1])
                     hop.send_msg(FlowMod)
+
+            self.FLow_through_Port[dp_id][port_no].remove((flow[0], flow[1]))
+
+
 
 
     def proxy_arp(self, msg):

@@ -47,7 +47,7 @@ class No_Rest_Downhandler(app_manager.RyuApp):
             instructions=inst
         )
         datapath.send_msg(mod)
-        self.FLow_through_Port[datapath.id] = []
+        self.FLow_through_Port[datapath.id] = {}
         print("Creazione dict del datapath", datapath.id)
 
 
@@ -124,11 +124,11 @@ class No_Rest_Downhandler(app_manager.RyuApp):
         # SU UNA DATA PORTA DEL DATAPATH
         if datapath.id in self.FLow_through_Port:
             if output_port in self.FLow_through_Port[datapath.id]:
-                self.FLow_through_Port[datapath.id][output_port].append(((sender_mac, src_dpid), (destination_mac, dst_dpid)))
+                self.FLow_through_Port[datapath.id][output_port].append((sender_mac, src_dpid, destination_mac, dst_dpid))
             else:
-                self.FLow_through_Port[datapath.id].append({output_port: [((sender_mac, src_dpid), (destination_mac, dst_dpid))]})
+                self.FLow_through_Port[datapath.id][output_port] = [(sender_mac, src_dpid, destination_mac, dst_dpid)]
         else:
-            self.FLow_through_Port[datapath.id] = {output_port: [((sender_mac, src_dpid), (destination_mac, dst_dpid))]}
+            self.FLow_through_Port[datapath.id] = {output_port: [(sender_mac, src_dpid, destination_mac, dst_dpid)]}
 
         print(self.FLow_through_Port)
 
@@ -191,13 +191,11 @@ class No_Rest_Downhandler(app_manager.RyuApp):
                                                           match, instructions)
             return flow_del
 
-        for item in self.FLow_through_Port[dp_id]:
-            if port_no in item:
-                print("MATCH SULLE LISTE")
-                break
-            else:
-                print("Liste Vuote: NESSUN FLOW SULLA PORTA:", port_no)
-                return
+        if port_no in self.FLow_through_Port[dp_id]:
+            print("MATCH SULLE LISTE")
+        else:
+            print("Liste Vuote: NESSUN FLOW SULLA PORTA:", port_no)
+            return
 
         for link in self.Link_list:
             net.add_edge(link.src.dpid, link.dst.dpid, port=link.src.port_no)
@@ -205,10 +203,12 @@ class No_Rest_Downhandler(app_manager.RyuApp):
         for flow in self.FLow_through_Port[dp_id][port_no]:
             # si trova il cammino minimo tra il mittente e il destinatario salvati alla packet_in che
             # scambiavano pacchetti attraverso quella porta
+            print(type(flow))
+            print(flow)
             path = nx.shortest_path(
                 net,
-                flow[0][1],
-                flow[1][1]
+                flow[1],
+                flow[3]
             )
 
             if path is None:
@@ -216,10 +216,10 @@ class No_Rest_Downhandler(app_manager.RyuApp):
 
             for hop in self.Switch_list:
                 if hop.id in path:
-                    FlowMod = createFlowMod(hop, flow[0][0], flow[1][1])
+                    FlowMod = createFlowMod(hop, flow[0], flow[2])
                     hop.send_msg(FlowMod)
 
-            self.FLow_through_Port[dp_id][port_no].remove((flow[0], flow[1]))
+            self.FLow_through_Port[dp_id][port_no].remove(flow)
 
 
 

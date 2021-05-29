@@ -24,7 +24,7 @@ class DOWNHANDLER(app_manager.RyuApp):
         super(DOWNHANDLER, self).__init__(*args, **kwargs)
         self.mac_to_port = {}
         self.arp_table = {}
-        self.sw = {}
+        self.sw = []
         self.SWITCH_LIST = []
         self.LINK_LIST = []
         self.HOST_LIST = []
@@ -36,6 +36,7 @@ class DOWNHANDLER(app_manager.RyuApp):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
 
+        self.sw.append(datapath)
         self.mac_to_port[datapath.id] = {}
 
         match = parser.OFPMatch()
@@ -135,19 +136,20 @@ class DOWNHANDLER(app_manager.RyuApp):
 
         def delFlowmatch(addr1, addr2, datapath):
             "function deletes flowtable entries matching the two mac addresses in all the switches"
-            match = parser.OFPMatch(
+            ofproto = datapath.ofproto
+            match = datapath.ofproto_parser.OFPMatch(
                 eth_src=addr1,
                 eth_dst=addr2
             )
 
             instructions = []
 
-            flow_del = datapath.ofproto_parser.OFPFlowmod(datapath,0,0, 0,
+            flow_del = datapath.ofproto_parser.OFPFlowMod(datapath,0,0, 0,
                                                           ofproto.OFPFC_DELETE, 0, 0,
                                                           1,
                                                           ofproto.OFPCML_NO_BUFFER,
                                                           ofproto.OFPP_ANY,
-                                                          OFPG_ANY, 0,
+                                                          ofproto.OFPG_ANY, 0,
                                                           match, instructions)
             print("Cancellazione Flow entries nello switch ", str(datapath.id))
             datapath.send_msg(flow_del)
@@ -160,23 +162,25 @@ class DOWNHANDLER(app_manager.RyuApp):
         print("#########NUMERO DI PORTA: ", port_no)
 
         port_str = 'OUTPUT:' + str(port_no)
-        print("@@@@@@@@@@@      %s", port_str)
+        print(port_str)
         mac1 = None
         mac2 = None
 
         for item in Dp_Flows[str(dp_id)]:
-            if item['actions'][0] == port_str:
+                print(item)
+                for action in item['actions']:
+                    print(action)
+                    if port_str == action:
+                        print("MATCH di OUTPUT PORT!")
+                        mac1 = item['match']['dl_src']
+                        mac2 = item['match']['dl_dst']
+                        print(mac1, mac2)
 
-                print("MATCH di OUTPUT PORT!")
-                mac1 = item['match']['dl_src']
-                mac2 = item['match']['dl_dst']
-                print(mac1, mac2)
-
-                if (mac1 is not None) & (mac2 is not None):
-                    for switch in get_all_switch(self):
-                        delFlowmatch(mac1, mac2, switch)
-                        delFlowmatch(mac2, mac1, switch)
-                        print("MATCH! regola cancellata @@@@@@@@@@@@@@@")
+                        if (mac1 is not None) & (mac2 is not None):
+                            for switch in self.sw:
+                                delFlowmatch(mac1, mac2, switch)
+                                delFlowmatch(mac2, mac1, switch)
+                                print("MATCH! regola cancellata @@@@@@@@@@@@@@@")
 
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)

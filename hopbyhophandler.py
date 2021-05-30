@@ -239,6 +239,52 @@ class HopbyHophandler(app_manager.RyuApp):
         link_down_dpid = [link_down.src.dpid, link_down.dst.dpid]
         print(link_down_dpid)
 
+        def generateFlowMod(datapath, eth_dst):
+            ofproto = datapath.ofproto
+            match = datapath.ofproto_parser.OFPMatch(
+                eth_dst=eth_dst
+            )
+
+            instructions = []
+
+            flow_del = datapath.ofproto_parser.OFPFlowMod(datapath, 0, 0, 0,
+                                                          ofproto.OFPFC_DELETE, 0, 0,
+                                                          1,
+                                                          ofproto.OFPCML_NO_BUFFER,
+                                                          ofproto.OFPP_ANY,
+                                                          ofproto.OFPG_ANY, 0,
+                                                          match, instructions)
+            print("Cancellazione Flow entries nello switch ", str(datapath.id))
+            datapath.send_msg(flow_del)
+
+        def DeletePathFlows(link, path, eth_dst):
+            lista1 = []
+            lista2 = []
+            for i in range(len(path)):
+                if path[i] == link[0] and path[i+1] == link[1]:
+
+                    #nel caso di link presente in path salvati si separa il path in due rami
+                    for j in range(i):
+                        lista1 = lista1.append(path[j])
+                    for j in range(i+1, len(path)-1):
+                        lista2 = lista2.append(path[j])
+
+                    #aggiornamento della lista Path_list:
+                    #rimuovo il path lungo e inserisco i due path separati dalla rottura del link
+                    self.Path_list[eth_dst].remove(path)
+                    self.Path_list[eth_dst].append(lista1, lista2)
+                    print(self.Path_list)
+
+                    #individuazione dei DP con regole sbagliate e creazione dei messaggi flowmod
+                    #si cancellano le regole con match su eth_dst solo sul percorso "che precede" il link rotto
+                    for switch in get_all_switch(self):
+                        if switch.id in lista1:
+                            generateFlowMod(switch, eth_dst)
+
+
+        for eth_dst in self.Path_list:
+            for path in self.Path_list[eth_dst]:
+                DeletePathFlows(link_down, path, eth_dst)
 
     def proxy_arp(self, msg):
         datapath = msg.datapath

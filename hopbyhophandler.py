@@ -43,7 +43,7 @@ class HopbyHophandler(app_manager.RyuApp):
 
         self.Link_list = get_all_link(self)
         self.Switch_list[datapath.id] = datapath
-        print(self.Switch_listS)
+        print(self.Switch_list)
 
     # trova switch destinazione e porta dello switch
     def find_destination_switch(self, destination_mac):
@@ -54,8 +54,8 @@ class HopbyHophandler(app_manager.RyuApp):
 
     def find_next_hop_to_destination(self, source_id, destination_id):
         net = nx.DiGraph()
-        self.Link_list = get_all_link(self)
-        for link in self.Link_list:
+        #self.Link_list = get_all_link(self)
+        for link in get_all_link(self):
             net.add_edge(link.src.dpid, link.dst.dpid, port=link.src.port_no)
 
         path = nx.shortest_path(
@@ -148,25 +148,28 @@ class HopbyHophandler(app_manager.RyuApp):
             if destination_mac not in self.Path_list:
                 self.Path_list[destination_mac] = [path]
             else:
-                check = 0
-                print("controllo i path...")
-                for previous_path in self.Path_list[destination_mac]:
-                    in_path = IsinPath(path, previous_path)
-                    print("Rapporto path: ", in_path)
-                    if in_path == 2:
-                        self.Path_list[destination_mac].remove(previous_path)
-                        print("deleted previous path: ", previous_path)
-                        if check == 0:
-                            print("aggiungo dopo delete check=", check)
+                if (self.Path_list[destination_mac] == []):
+                    self.Path_list[destination_mac].append(path)
+                else:
+                    check = 0
+                    print("controllo i path...")
+                    for previous_path in self.Path_list[destination_mac]:
+                        in_path = IsinPath(path, previous_path)
+                        print("Rapporto path: ", in_path)
+                        if in_path == 2:
+                            self.Path_list[destination_mac].remove(previous_path)
+                            print("deleted previous path: ", previous_path)
+                            if check == 0:
+                                print("aggiungo dopo delete check=", check)
+                                self.Path_list[destination_mac].append(path)
+                                check = check + 1
+                            check = 0
+                        elif in_path == 1:
+                            print("il path è un sottoset di ", previous_path)
+                            break
+                        elif in_path == 0:
                             self.Path_list[destination_mac].append(path)
-                            check = check + 1
-                        check = 0
-                    elif in_path == 1:
-                        print("il path è un sottoset di ", previous_path)
-                        break
-                    elif in_path == 0:
-                        self.Path_list[destination_mac].append(path)
-                        print("path diversi")
+                            print("path diversi")
 
         # print "DP: ", datapath.id, "Host: ", pkt_ip.dst, "Port: ", output_port
         print(self.Path_list)
@@ -248,45 +251,57 @@ class HopbyHophandler(app_manager.RyuApp):
             datapath.send_msg(flow_del)
 
         def deletePathFlows(link, path, eth_dst):
+
             lista1 = []
             lista2 = []
 
             #caso path uguale a link, di lunghezza 2
-            if path == link:
-                for switch in get_all_switch(self):
-                    if switch.id in link:
-                        generateFlowMod(switch, eth_dst)
+            if (len(path) == 2) & (path == link):
+                print("DEB-deletePathFlows:   path uguale a:", path)
+                for switch_id in self.Switch_list:
+                    if switch_id is link[0]:
+                        generateFlowMod(self.Switch_list[switch_id], eth_dst)
                 self.Path_list[eth_dst].remove(path)
-                return
 
-            for i in range(len(path) - 1):
-                if path[i] == link[0] and path[i + 1] == link[1]:
+            else:
+                for i in range(len(path) - 1):
 
-                    # nel caso di link presente in path salvati si separa il path in due rami
-                    for j in range(i):
-                        lista1 = lista1.append(path[j])
-                    for j in range(i + 1, len(path) - 1):
-                        lista2 = lista2.append(path[j])
+                    if path[i] == link[0] and path[i + 1] == link[1]:
 
-                    print("DEB-DelPathFlows: link trovato nel path")
+                        if i == 0:
+                            lista1.append(path[0])
+                            for j in range(i + 1, len(path)):
+                                lista2.append(path[j])
+                        else:
+                            # nel caso di link presente in path salvati si separa il path in due rami
+                            for j in range(i+1):
+                                lista1.append(path[j])
+                            for j in range(i + 1, len(path)):
+                                lista2.append(path[j])
 
-                    # aggiornamento della lista Path_list:
-                    # rimuovo il path lungo e inserisco i due path separati dalla rottura del link
-                    self.Path_list[eth_dst].remove(path)
-                    self.Path_list[eth_dst].append(lista2)
-                    print(self.Path_list)
+                        print("DEB-DelPathFlows: link trovato nel path:", path)
+                        print(lista1)
+                        print(lista2)
 
-                    # individuazione dei DP con regole sbagliate e creazione dei messaggi flowmod
-                    # si cancellano le regole con match su eth_dst solo sul percorso "che precede" il link rotto
-                    for switch_id in self.Switch_list:
-                        if switch_id in lista1:
-                            generateFlowMod(self.Switch_list[switch_id], eth_dst)
+                        # aggiornamento della lista Path_list:
+                        # rimuovo il path lungo e inserisco i due path separati dalla rottura del link
+                        self.Path_list[eth_dst].remove(path)
+                        self.Path_list[eth_dst].append(lista2)
+                        print(self.Path_list)
+
+                        # individuazione dei DP con regole sbagliate e creazione dei messaggi flowmod
+                        # si cancellano le regole con match su eth_dst solo sul percorso "che precede" il link rotto
+                        for switch_id in self.Switch_list:
+                            if switch_id in lista1:
+                                generateFlowMod(self.Switch_list[switch_id], eth_dst)
             return
 
         if link_down:
             for eth_dst in self.Path_list:
                 for path in self.Path_list[eth_dst]:
                     deletePathFlows(link_down_dpid, path, eth_dst)
+                    link_down2 = [link_down_dpid[1], link_down_dpid[0]]
+                    deletePathFlows(link_down2, path, eth_dst)
 
     def proxy_arp(self, msg):
         datapath = msg.datapath

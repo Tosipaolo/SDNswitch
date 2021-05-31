@@ -15,7 +15,7 @@ class HopbyHophandler(app_manager.RyuApp):
         super(HopbyHophandler, self).__init__(*args, **kwargs)
         self.Path_list = {}
         self.Link_list = []
-        self.Switch_list = []
+        self.Switch_list = {}
 
     # tutti i pacchetti al controllore
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
@@ -42,7 +42,8 @@ class HopbyHophandler(app_manager.RyuApp):
         datapath.send_msg(mod)
 
         self.Link_list = get_all_link(self)
-        self.Switch_list = get_all_switch(self)
+        self.Switch_list[datapath.id] = datapath
+        print(self.Switch_listS)
 
     # trova switch destinazione e porta dello switch
     def find_destination_switch(self, destination_mac):
@@ -277,14 +278,15 @@ class HopbyHophandler(app_manager.RyuApp):
 
                     # individuazione dei DP con regole sbagliate e creazione dei messaggi flowmod
                     # si cancellano le regole con match su eth_dst solo sul percorso "che precede" il link rotto
-                    for switch in get_all_switch(self):
-                        if switch.id in lista1:
-                            generateFlowMod(switch, eth_dst)
+                    for switch_id in self.Switch_list:
+                        if switch_id in lista1:
+                            generateFlowMod(self.Switch_list[switch_id], eth_dst)
             return
 
-        for eth_dst in self.Path_list:
-            for path in self.Path_list[eth_dst]:
-                deletePathFlows(link_down_dpid, path, eth_dst)
+        if link_down:
+            for eth_dst in self.Path_list:
+                for path in self.Path_list[eth_dst]:
+                    deletePathFlows(link_down_dpid, path, eth_dst)
 
     def proxy_arp(self, msg):
         datapath = msg.datapath

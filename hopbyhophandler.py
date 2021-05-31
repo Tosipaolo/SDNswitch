@@ -1,10 +1,3 @@
-# Implementazione openflow di hop-by-hop routing
-# usando la mappa della rete trovata con topology discovery
-#
-# Si richiede l'uso del topology discovery
-# ryu-manager --observe-links
-#
-
 from ryu.base import app_manager
 from ryu.controller import ofp_event
 from ryu.controller.handler import set_ev_cls, CONFIG_DISPATCHER, MAIN_DISPATCHER
@@ -43,7 +36,7 @@ class HopbyHophandler(app_manager.RyuApp):
         mod = parser.OFPFlowMod(
             datapath=datapath,
             priority=0,
-            match = parser.OFPMatch(),
+            match=parser.OFPMatch(),
             instructions=inst
         )
         datapath.send_msg(mod)
@@ -52,13 +45,13 @@ class HopbyHophandler(app_manager.RyuApp):
         self.Switch_list = get_all_switch(self)
 
     # trova switch destinazione e porta dello switch
-    def find_destination_switch(self,destination_mac):
+    def find_destination_switch(self, destination_mac):
         for host in get_all_host(self):
             if host.mac == destination_mac:
                 return (host.port.dpid, host.port.port_no)
-        return (None,None)
+        return (None, None)
 
-    def find_next_hop_to_destination(self,source_id,destination_id):
+    def find_next_hop_to_destination(self, source_id, destination_id):
         net = nx.DiGraph()
         self.Link_list = get_all_link(self)
         for link in self.Link_list:
@@ -70,7 +63,7 @@ class HopbyHophandler(app_manager.RyuApp):
             destination_id
         )
 
-        first_link = net[ path[0] ][ path[1] ]
+        first_link = net[path[0]][path[1]]
 
         return (first_link['port'], path)
 
@@ -115,11 +108,10 @@ class HopbyHophandler(app_manager.RyuApp):
             output_port = dst_port
         else:
             # host non direttamente collegato
-            (output_port, path) = self.find_next_hop_to_destination(datapath.id,dst_dpid)
+            (output_port, path) = self.find_next_hop_to_destination(datapath.id, dst_dpid)
 
         print("messaggio da", source_mac, "a", destination_mac)
         print("Path trovato", path)
-
 
         def IsinPath(present, prev):
             if prev == []:
@@ -133,7 +125,7 @@ class HopbyHophandler(app_manager.RyuApp):
                     for i in range(Lenght):
                         if prev[i] == present[0]:
                             n = 1
-                            while (n < len(present)) and (prev[i+n] == present[n]):
+                            while (n < len(present)) and (prev[i + n] == present[n]):
                                 n += 1
                             if n == len(present):
                                 return 1
@@ -150,7 +142,6 @@ class HopbyHophandler(app_manager.RyuApp):
                             else:
                                 return 0
                 return 0
-
 
         if path is not None:
             if destination_mac not in self.Path_list:
@@ -179,9 +170,8 @@ class HopbyHophandler(app_manager.RyuApp):
         # print "DP: ", datapath.id, "Host: ", pkt_ip.dst, "Port: ", output_port
         print(self.Path_list)
 
-
         # inoltra il pacchetto corrente
-        actions = [ parser.OFPActionOutput(output_port) ]
+        actions = [parser.OFPActionOutput(output_port)]
         out = parser.OFPPacketOut(
             datapath=datapath,
             buffer_id=msg.buffer_id,
@@ -194,11 +184,11 @@ class HopbyHophandler(app_manager.RyuApp):
         # aggiungi la regola
         match = parser.OFPMatch(
             eth_dst=destination_mac
-            )
+        )
         inst = [
             parser.OFPInstructionActions(
                 ofproto.OFPIT_APPLY_ACTIONS,
-                [ parser.OFPActionOutput(output_port) ]
+                [parser.OFPActionOutput(output_port)]
             )
         ]
         mod = parser.OFPFlowMod(
@@ -210,8 +200,6 @@ class HopbyHophandler(app_manager.RyuApp):
         )
         datapath.send_msg(mod)
 
-
-
         return
 
     @set_ev_cls(ofp_event.EventOFPPortStatus, MAIN_DISPATCHER)
@@ -222,22 +210,23 @@ class HopbyHophandler(app_manager.RyuApp):
         ofp = dp.ofproto
         port_no = msg.desc.port_no
 
-
         print(dp_id, "porta: ", port_no)
 
         link_down = None
 
-        lista_link = [(link.src.dpid, link.dst.dpid, {'port':link.dst.port_no}) for link in self.Link_list]
+        lista_link = [(link.src.dpid, link.dst.dpid, {'port': link.dst.port_no}) for link in self.Link_list]
         print(lista_link)
 
-        #troviamo il link che è stato disconnesso
+        # troviamo il link che è stato disconnesso
         for link in self.Link_list:
-            if link.src.dpid == dp_id & link.src.port_no == port_no:
+            if (link.src.dpid is dp_id) & (link.src.port_no is port_no):
                 link_down = link
 
-
-        link_down_dpid = [link_down.src.dpid, link_down.dst.dpid]
-        print(link_down_dpid)
+        if link_down:
+            link_down_dpid = [link_down.src.dpid, link_down.dst.dpid]
+            print(link_down_dpid)
+        else:
+            print("LINK DOWN NON TROVATO! xxxx")
 
         def generateFlowMod(datapath, eth_dst):
             ofproto = datapath.ofproto
@@ -257,34 +246,45 @@ class HopbyHophandler(app_manager.RyuApp):
             print("Cancellazione Flow entries nello switch ", str(datapath.id))
             datapath.send_msg(flow_del)
 
-        def DeletePathFlows(link, path, eth_dst):
+        def deletePathFlows(link, path, eth_dst):
             lista1 = []
             lista2 = []
-            for i in range(len(path)):
-                if path[i] == link[0] and path[i+1] == link[1]:
 
-                    #nel caso di link presente in path salvati si separa il path in due rami
+            #caso path uguale a link, di lunghezza 2
+            if path == link:
+                for switch in get_all_switch(self):
+                    if switch.id in link:
+                        generateFlowMod(switch, eth_dst)
+                self.Path_list[eth_dst].remove(path)
+                return
+
+            for i in range(len(path) - 1):
+                if path[i] == link[0] and path[i + 1] == link[1]:
+
+                    # nel caso di link presente in path salvati si separa il path in due rami
                     for j in range(i):
                         lista1 = lista1.append(path[j])
-                    for j in range(i+1, len(path)-1):
+                    for j in range(i + 1, len(path) - 1):
                         lista2 = lista2.append(path[j])
 
-                    #aggiornamento della lista Path_list:
-                    #rimuovo il path lungo e inserisco i due path separati dalla rottura del link
+                    print("DEB-DelPathFlows: link trovato nel path")
+
+                    # aggiornamento della lista Path_list:
+                    # rimuovo il path lungo e inserisco i due path separati dalla rottura del link
                     self.Path_list[eth_dst].remove(path)
                     self.Path_list[eth_dst].append(lista2)
                     print(self.Path_list)
 
-                    #individuazione dei DP con regole sbagliate e creazione dei messaggi flowmod
-                    #si cancellano le regole con match su eth_dst solo sul percorso "che precede" il link rotto
+                    # individuazione dei DP con regole sbagliate e creazione dei messaggi flowmod
+                    # si cancellano le regole con match su eth_dst solo sul percorso "che precede" il link rotto
                     for switch in get_all_switch(self):
                         if switch.id in lista1:
                             generateFlowMod(switch, eth_dst)
-
+            return
 
         for eth_dst in self.Path_list:
             for path in self.Path_list[eth_dst]:
-                DeletePathFlows(link_down, path, eth_dst)
+                deletePathFlows(link_down_dpid, path, eth_dst)
 
     def proxy_arp(self, msg):
         datapath = msg.datapath
@@ -313,16 +313,16 @@ class HopbyHophandler(app_manager.RyuApp):
 
         pkt_out = packet.Packet()
         eth_out = ethernet.ethernet(
-            dst = eth_in.src,
-            src = destination_host_mac,
-            ethertype = ether_types.ETH_TYPE_ARP
+            dst=eth_in.src,
+            src=destination_host_mac,
+            ethertype=ether_types.ETH_TYPE_ARP
         )
         arp_out = arp.arp(
-            opcode  = arp.ARP_REPLY,
-            src_mac = destination_host_mac,
-            src_ip  = arp_in.dst_ip,
-            dst_mac = arp_in.src_mac,
-            dst_ip  = arp_in.src_ip
+            opcode=arp.ARP_REPLY,
+            src_mac=destination_host_mac,
+            src_ip=arp_in.dst_ip,
+            dst_mac=arp_in.src_mac,
+            dst_ip=arp_in.src_ip
         )
         pkt_out.add_protocol(eth_out)
         pkt_out.add_protocol(arp_out)
@@ -336,4 +336,5 @@ class HopbyHophandler(app_manager.RyuApp):
             data=pkt_out.data
         )
         datapath.send_msg(out)
+
         return

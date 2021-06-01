@@ -286,7 +286,8 @@ class HopbyHophandler(app_manager.RyuApp):
                         # aggiornamento della lista Path_list:
                         # rimuovo il path lungo e inserisco i due path separati dalla rottura del link
                         self.Path_list[eth_dst].remove(path)
-                        self.Path_list[eth_dst].append(lista2)
+                        if (len(lista2) > 1):
+                            self.Path_list[eth_dst].append(lista2)
                         print(self.Path_list)
 
                         # individuazione dei DP con regole sbagliate e creazione dei messaggi flowmod

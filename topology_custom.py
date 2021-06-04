@@ -1,7 +1,7 @@
 from mininet.topo import Topo
 
 
-class Test_Topo(Topo):
+class MyTopo(Topo):
     def __init__(self):
         Topo.__init__(self)
 
@@ -45,4 +45,6 @@ class Test_Topo(Topo):
         self.addLink(s8, h10)
 
 
-topos = {"first": (lambda: first())}
+topos = { 'mytopo': ( lambda: MyTopo() ) }
+
+

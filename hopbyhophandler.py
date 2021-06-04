@@ -147,29 +147,35 @@ class HopbyHophandler(app_manager.RyuApp):
         if path is not None:
             if destination_mac not in self.Path_list:
                 self.Path_list[destination_mac] = [path]
+                print("++++++++aggiunta path: 1", path)
             else:
                 if (self.Path_list[destination_mac] == []):
                     self.Path_list[destination_mac].append(path)
+                    print("++++++++aggiunta path: 2", path)
                 else:
                     check = 0
-                    print("controllo i path...")
+                    #print("controllo i path...")
                     for previous_path in self.Path_list[destination_mac]:
                         in_path = IsinPath(path, previous_path)
-                        print("Rapporto path: ", in_path)
+                        #print("Rapporto path: ", in_path)
                         if in_path == 2:
                             self.Path_list[destination_mac].remove(previous_path)
-                            print("deleted previous path: ", previous_path)
+                            #print("deleted previous path: ", previous_path)
                             if check == 0:
-                                print("aggiungo dopo delete check=", check)
+                                #print("aggiungo dopo delete check=", check)
                                 self.Path_list[destination_mac].append(path)
+                                print("++++++++aggiunta path 3: ", path)
                                 check = check + 1
                             check = 0
                         elif in_path == 1:
-                            print("il path è un sottoset di ", previous_path)
+                            #print("il path è un sottoset di ", previous_path)
                             break
                         elif in_path == 0:
-                            self.Path_list[destination_mac].append(path)
-                            print("path diversi")
+                            if check == 0:
+                                self.Path_list[destination_mac].append(path)
+                                print("++++++++aggiunta path 4: ", path)
+                                #print("path diversi")
+                                check = check + 1
 
         # print "DP: ", datapath.id, "Host: ", pkt_ip.dst, "Port: ", output_port
         print(self.Path_list)
@@ -214,12 +220,14 @@ class HopbyHophandler(app_manager.RyuApp):
         ofp = dp.ofproto
         port_no = msg.desc.port_no
 
-        print(dp_id, "porta: ", port_no)
+        print("-------------------------------------------------")
+        print("PORTHANDLER_RICEVUTO: ",dp_id, "porta n°",port_no)
+
 
         link_down = None
 
         lista_link = [(link.src.dpid, link.dst.dpid, {'port': link.dst.port_no}) for link in self.Link_list]
-        print(lista_link)
+        #print(lista_link)
 
         # troviamo il link che è stato disconnesso
         for link in self.Link_list:
@@ -228,7 +236,7 @@ class HopbyHophandler(app_manager.RyuApp):
 
         if link_down:
             link_down_dpid = [link_down.src.dpid, link_down.dst.dpid]
-            print(link_down_dpid)
+            print("Link down identificato:",link_down_dpid)
         else:
             print("LINK DOWN NON TROVATO! xxxx")
 
@@ -279,9 +287,9 @@ class HopbyHophandler(app_manager.RyuApp):
                             for j in range(i + 1, len(path)):
                                 lista2.append(path[j])
 
-                        print("DEB-DelPathFlows: link trovato nel path:", path)
-                        print(lista1)
-                        print(lista2)
+                        #print("DEB-DelPathFlows: link trovato nel path:", path)
+                        #print(lista1)
+                        #print(lista2)
 
                         # aggiornamento della lista Path_list:
                         # rimuovo il path lungo e inserisco i due path separati dalla rottura del link

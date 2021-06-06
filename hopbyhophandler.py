@@ -13,6 +13,7 @@ class HopbyHophandler(app_manager.RyuApp):
 
     def __init__(self, *args, **kwargs):
         super(HopbyHophandler, self).__init__(*args, **kwargs)
+        # inizializzo le strutture globali del controllore
         self.Path_list = {}
         self.Link_list = []
         self.Switch_list = {}
@@ -41,6 +42,7 @@ class HopbyHophandler(app_manager.RyuApp):
         )
         datapath.send_msg(mod)
 
+        # aggiunta dati sulla topologia
         self.Link_list = get_all_link(self)
         self.Switch_list[datapath.id] = datapath
         print(self.Switch_list)
@@ -54,7 +56,6 @@ class HopbyHophandler(app_manager.RyuApp):
 
     def find_next_hop_to_destination(self, source_id, destination_id):
         net = nx.DiGraph()
-        #self.Link_list = get_all_link(self)
         for link in get_all_link(self):
             net.add_edge(link.src.dpid, link.dst.dpid, port=link.src.port_no)
 
@@ -96,7 +97,7 @@ class HopbyHophandler(app_manager.RyuApp):
 
         # trova switch destinazione
         (dst_dpid, dst_port) = self.find_destination_switch(destination_mac)
-        # trova switch sorgente
+        # trova switch sorgente e porta sorgente
         (src_dpid, src_port) = self.find_destination_switch(source_mac)
 
         # host non trovato
@@ -114,6 +115,8 @@ class HopbyHophandler(app_manager.RyuApp):
         print("messaggio da", source_mac, "a", destination_mac)
         print("Path trovato", path)
 
+        # funzione usata per capire se il path trovato sia sovrainsieme di un path esistente
+        # ritorna 0->nuovo path, 1->se è sottoinsieme, 2->se sovrainsieme di un path già presente
         def IsinPath(present, prev):
             if prev == []:
                 return 0
@@ -144,17 +147,20 @@ class HopbyHophandler(app_manager.RyuApp):
                                 return 0
                 return 0
 
+        # aggiornamento di path list:
         if path is not None:
+            # controllo se eth_dst presente o meno
             if destination_mac not in self.Path_list:
                 self.Path_list[destination_mac] = [path]
                 print("++++++++aggiunta path: 1", path)
             else:
+                # se la lista dei path è vuota aggiungo path
                 if (self.Path_list[destination_mac] == []):
                     self.Path_list[destination_mac].append(path)
                     print("++++++++aggiunta path: 2", path)
                 else:
+                    #controllo i path già presenti
                     check = 0
-                    #print("controllo i path...")
                     for previous_path in self.Path_list[destination_mac]:
                         in_path = IsinPath(path, previous_path)
                         #print("Rapporto path: ", in_path)
@@ -177,7 +183,7 @@ class HopbyHophandler(app_manager.RyuApp):
                                 #print("path diversi")
                                 check = check + 1
 
-        # print "DP: ", datapath.id, "Host: ", pkt_ip.dst, "Port: ", output_port
+        # Stampo la lista aggiornata ad ogni packet in
         print(self.Path_list)
 
         # inoltra il pacchetto corrente
@@ -226,8 +232,8 @@ class HopbyHophandler(app_manager.RyuApp):
 
         link_down = None
 
-        lista_link = [(link.src.dpid, link.dst.dpid, {'port': link.dst.port_no}) for link in self.Link_list]
-        #print(lista_link)
+        # lista_link = [(link.src.dpid, link.dst.dpid, {'port': link.dst.port_no}) for link in self.Link_list]
+        # print(lista_link)
 
         # troviamo il link che è stato disconnesso
         for link in self.Link_list:
@@ -239,7 +245,9 @@ class HopbyHophandler(app_manager.RyuApp):
             print("Link down identificato:",link_down_dpid)
         else:
             print("LINK DOWN NON TROVATO! xxxx")
+            # stampato in caso di errore oppure di procedura di PortHandler già eseguita
 
+        # creazione del mathc su eth_dst e del pacchetto di FlowMod
         def generateFlowMod(datapath, eth_dst):
             ofproto = datapath.ofproto
             match = datapath.ofproto_parser.OFPMatch(
@@ -258,6 +266,7 @@ class HopbyHophandler(app_manager.RyuApp):
             print("Cancellazione Flow entries nello switch ", str(datapath.id))
             datapath.send_msg(flow_del)
 
+        # separazione del path in rami lista1 e lista2 se il link rotto è presente nel path
         def deletePathFlows(link, path, eth_dst):
 
             lista1 = []
@@ -305,6 +314,7 @@ class HopbyHophandler(app_manager.RyuApp):
                                 generateFlowMod(self.Switch_list[switch_id], eth_dst)
             return
 
+        # se link_down esiste si esegue la procedura di controllo si sul link [A,B] che sul link [B,A]
         if link_down:
             for eth_dst in self.Path_list:
                 for path in self.Path_list[eth_dst]:

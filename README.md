@@ -1,12 +1,13 @@
 # SDNswitch
 
 ## HOPBYHOPHANDLER
-- basato su switch5, Hop by hop
-- salvataggio dei path utilizzati dalle conversazioni (se più piccoli vengono inglobati dai più lunghi)
-- individua il link rotto e verifica quali path siano colpiti
-- eliminazione delle flowtable sulla parte del path che non può più raggiungere l'host di destinazione
-- la tabella dei path è aggiornata eliminando il path più lungo e mantenendo la parte funzionante
-
+- based on a barebone implementation of a Ryu Hop-by-Hop configuring network;
+- The network saves the path used by the active flows in a data structure. If a new dicovered path includes a smaller
+  already present one, the latter will be counted inside the longer one;
+- In case of a link brakage (triggered through the mininet command line inteface) the network will be aware of that.  
+  In this case the topology is refreshed, and the controller verifies which path are affected by the breakage.
+- Flowtable entries on the unreachable side of the net are deleted, while the ones for smaller non-affected path are kept.
+- On a new transmission the controller will indicate a new shortest path from client to server if available, or indicate the unreachability.
 
 ## Hbhconrest
 - basato su switch2.py
@@ -16,10 +17,7 @@
 - non funziona con hop-by-hop
 
 ## Hbhnorest 
-- basato su switch5, hop by hop switch
-- utilizza struttura dati per tenere conto dei flussi su ogni porta di ogni switch
-- utilizza le funzioni di NX per trovare il percorso tra gli host che comunicano 
-  attraverso la porta interessata
-- invia messaggi di FlowMod a tutti gli switch che si trovano sul percorso tra i due host
-- NON FUNZIONANTE: NON SALVA TUTTE LE CONVERSAZIONI TRA HOST, NON MANTIENE TUTTO FUNZIONANTE
+- hop-by-hop approach without getting the tables from the REST API, not working
+- It's not saving all conversations betwen the hosts.
+
 
